@@ -1,0 +1,482 @@
+
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Kubernetes on CoreOS on EC2'
+Mappings:
+  RegionMap:
+    ap-northeast-1:
+      AMI: ami-f9b08ff8
+    ap-southeast-1:
+      AMI: ami-c24f6c90
+    ap-southeast-2:
+      AMI: ami-09117e33
+    eu-central-1:
+      AMI: ami-56ccfa4b
+    eu-west-1:
+      AMI: ami-a47fd5d3
+    sa-east-1:
+      AMI: ami-1104b30c
+    us-east-1:
+      AMI: ami-66e6680e
+    us-west-1:
+      AMI: ami-bbfcebfe
+    us-west-2:
+      AMI: ami-ff8dc5cf
+Parameters:
+  DockerCIDR:
+    Default: 172.24.0.0/16
+    Description: The network CIDR to use with for the docker0 network
+      interface. Fleet uses 192.168/16 internally so your choices are
+      basically 10/8 or 172.16/12. None-VPC AWS uses 10/8 also.
+    Type: String
+  AdvertisedIPAddress:
+    AllowedValues:
+    - private
+    - public
+    Default: private
+    Description: Use 'private' if your etcd cluster is within one region or 'public'
+      if it spans regions or cloud providers.
+    Type: String
+  AllowSSHFrom:
+    Default: 0.0.0.0/0
+    Description: The net block (CIDR) that SSH is available to.
+    Type: String
+  ClusterSize:
+    Default: '2'
+    Description: Number of 'minion' nodes in cluster.
+    MaxValue: '256'
+    MinValue: '2'
+    Type: Number
+  DiscoveryURL:
+    Description: An unique etcd cluster discovery URL. Grab a new token from https://discovery.etcd.io/new
+    Type: String
+  InstanceType:
+    AllowedValues:
+    - m3.medium
+    - m3.large
+    - m3.xlarge
+    - m3.2xlarge
+    - c3.large
+    - c3.xlarge
+    - c3.2xlarge
+    - c3.4xlarge
+    - c3.8xlarge
+    - cc2.8xlarge
+    - cr1.8xlarge
+    - hi1.4xlarge
+    - hs1.8xlarge
+    - i2.xlarge
+    - i2.2xlarge
+    - i2.4xlarge
+    - i2.8xlarge
+    - r3.large
+    - r3.xlarge
+    - r3.2xlarge
+    - r3.4xlarge
+    - r3.8xlarge
+    - t2.micro
+    - t2.small
+    - t2.medium
+    ConstraintDescription: Must be a valid EC2 HVM instance type.
+    Default: m3.medium
+    Description: EC2 instance type (m3.medium, etc).
+    Type: String
+  KeyPair:
+    Description: The name of an EC2 Key Pair to allow SSH access to the instance.
+    Type: String
+Resources:
+  CoreOSInternalIngressTCP:
+    Properties:
+      GroupName:
+        Ref: KubeSecurityGroup
+      IpProtocol: tcp
+      FromPort: '0'
+      ToPort: '65535'
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+        - KubeSecurityGroup
+        - GroupId
+    Type: AWS::EC2::SecurityGroupIngress
+  CoreOSInternalIngressUDP:
+    Properties:
+      GroupName:
+        Ref: KubeSecurityGroup
+      IpProtocol: udp
+      FromPort: '0'
+      ToPort: '65535'
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+        - KubeSecurityGroup
+        - GroupId
+    Type: AWS::EC2::SecurityGroupIngress
+  KubeSecurityGroup:
+    Properties:
+      GroupDescription: CoreOS SecurityGroup
+      SecurityGroupIngress:
+      - CidrIp:
+          Ref: AllowSSHFrom
+        FromPort: '22'
+        IpProtocol: tcp
+        ToPort: '22'
+    Type: AWS::EC2::SecurityGroup
+  KubeMasterSecurityGroup:
+    Properties:
+      GroupDescription: Master SecurityGroup
+    Type: AWS::EC2::SecurityGroup
+  KubeMinionSecurityGroup:
+    Properties:
+      GroupDescription: Minion SecurityGroup
+    Type: AWS::EC2::SecurityGroup
+  MasterAutoScale:
+    Properties:
+      AvailabilityZones:
+        Fn::GetAZs: ''
+      DesiredCapacity: '1'
+      LaunchConfigurationName:
+        Ref: MasterLaunchConfig
+      MaxSize: '2'
+      MinSize: '1'
+      Tags:
+      - Key: Name
+        PropagateAtLaunch: true
+        Value:
+          Ref: AWS::StackName
+    Type: AWS::AutoScaling::AutoScalingGroup
+  MinionAutoScale:
+    Properties:
+      AvailabilityZones:
+        Fn::GetAZs: ''
+      DesiredCapacity:
+        Ref: ClusterSize
+      LaunchConfigurationName:
+        Ref: MinionLaunchConfig
+      MaxSize: '256'
+      MinSize: '2'
+      Tags:
+      - Key: Name
+        PropagateAtLaunch: true
+        Value:
+          Ref: AWS::StackName
+    Type: AWS::AutoScaling::AutoScalingGroup
+  MasterLaunchConfig:
+    Properties:
+      ImageId:
+        Fn::FindInMap:
+        - RegionMap
+        - Ref: AWS::Region
+        - AMI
+      InstanceType:
+        Ref: InstanceType
+      KeyName:
+        Ref: KeyPair
+      SecurityGroups:
+      - Ref: KubeSecurityGroup
+      - Ref: KubeMasterSecurityGroup
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+          - ""
+          - - ! "#cloud-config\n\n"
+            - ! "coreos:\n"
+            - ! "  etcd:\n"
+            - ! "    discovery: "
+            - Ref: DiscoveryURL
+            - ! "\n"
+            - ! "    addr: $"
+            - Ref: AdvertisedIPAddress
+            - ! "_ipv4:4001\n"
+            - ! "    peer-addr: $"
+            - Ref: AdvertisedIPAddress
+            - ! "_ipv4:7001\n"
+            - ! "  fleet:\n"
+            - ! "    metadata: role=master\n"
+            - ! "  units:\n"
+            - ! "    - name: flannel-download.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=network-online.target\n"
+            - ! "        Requires=network-online.target\n"
+            - ! "        [Service]\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://s3.amazonaws.com/third-party-binaries/flanneld\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/flanneld\n"
+            - ! "        RemainAfterExit=yes\n"
+            - ! "        Type=oneshot\n"
+            - ! "    - name: kube-download.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=network-online.target\n"
+            - ! "        Requires=network-online.target\n"
+            - ! "        [Service]\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/apiserver\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/controller-manager\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/kubecfg\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/kubelet\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/proxy\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/scheduler\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/scheduler\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/apiserver\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/controller-manager\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/kubecfg\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/kubelet\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/proxy\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/scheduler\n"
+            - ! "        RemainAfterExit=yes\n"
+            - ! "        Type=oneshot\n"
+            - ! "    - name: kube-register-download.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=network-online.target\n"
+            - ! "        Requires=network-online.target\n"
+            - ! "        [Service]\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://s3.amazonaws.com/third-party-binaries/kube-register\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/kube-register\n"
+            - ! "        RemainAfterExit=yes\n"
+            - ! "        Type=oneshot\n"
+            - ! "    - name: etcd.service\n"
+            - ! "      command: start\n"
+            - ! "    - name: flannel.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=flannel-download.service etcd.service\n"
+            - ! "        Requires=flannel-download.service etcd.service\n"
+            - ! "        [Service]\n"
+            - ! "        ExecStartPre=/bin/bash -c \"until /usr/bin/etcdctl --no-sync set /coreos.com/network/config '{\\\"Network\\\":\\\""
+            - Ref: DockerCIDR
+            - ! "\\\"}' ; do /usr/bin/sleep 1 ; done\"\n"
+            - ! "        ExecStart=/opt/bin/flanneld\n"
+            - ! "        ExecStartPost=/bin/bash -c \"until [ -e /run/flannel/subnet.env ]; do /usr/bin/sleep 1 ; done\"\n"
+            - ! "        [Install]\n"
+            - ! "        WantedBy=multi-user.target\n"
+            - ! "    - name: docker.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=flannel.service\n"
+            - ! "        Requires=docker.socket flannel.service\n"
+            - ! "        [Service]\n"
+            - ! "        Environment=\"TMPDIR=/var/tmp/\"\n"
+            - ! "        EnvironmentFile=/run/flannel/subnet.env\n"
+            - ! "        ExecStartPre=/bin/mount --make-rprivate /\n"
+            - ! "        LimitNOFILE=1048576\n"
+            - ! "        LimitNPROC=1048576\n"
+            - ! "        ExecStart=/usr/bin/docker --daemon --storage-driver=btrfs --host=fd:// --bip=${FLANNEL_SUBNET} --mtu=${FLANNEL_MTU}\n"
+            - ! "        [Install]\n"
+            - ! "        WantedBy=multi-user.target\n"
+            - ! "    - name: fleet.socket\n"
+            - ! "      command: start\n"
+            - ! "    - name: fleet.service\n"
+            - ! "      command: start\n"
+            - ! "    - name: kube-kubelet.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=kube-download.service etcd.service\n"
+            - ! "        Requires=kube-download.service etcd.service\n"
+            - ! "        ConditionFileIsExecutable=/opt/bin/kubelet\n"
+            - ! "        [Service]\n"
+            - ! "        ExecStart=/opt/bin/kubelet --address=0.0.0.0 --port=10250 --hostname_override=$"
+            - Ref: AdvertisedIPAddress
+            - ! "_ipv4 --etcd_servers=http://127.0.0.1:4001 --logtostderr=true\n"
+            - ! "        Restart=always\n"
+            - ! "        RestartSec=10\n"
+            - ! "        [Install]\n"
+            - ! "        WantedBy=multi-user.target\n"
+            - ! "    - name: kube-proxy.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=kube-download.service etcd.service\n"
+            - ! "        Requires=kube-download.service etcd.service\n"
+            - ! "        ConditionFileIsExecutable=/opt/bin/proxy\n"
+            - ! "        [Service]\n"
+            - ! "        ExecStart=/opt/bin/proxy --etcd_servers=http://127.0.0.1:4001 --logtostderr=true\n"
+            - ! "        Restart=always\n"
+            - ! "        RestartSec=10\n"
+            - ! "        [Install]\n"
+            - ! "        WantedBy=multi-user.target\n"
+            - ! "    - name: kube-apiserver.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=kube-download.service etcd.service\n"
+            - ! "        Requires=kube-download.service etcd.service\n"
+            - ! "        ConditionFileIsExecutable=/opt/bin/apiserver\n"
+            - ! "        [Service]\n"
+            - ! "        ExecStart=/opt/bin/apiserver --address=127.0.0.1 --port=8080 --etcd_servers=http://127.0.0.1:4001 --logtostderr=true\n"
+            - ! "        Restart=always\n"
+            - ! "        RestartSec=10\n"
+            - ! "        [Install]\n"
+            - ! "        WantedBy=multi-user.target\n"
+            - ! "    - name: kube-scheduler.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=kube-apiserver.service kube-download.service etcd.service\n"
+            - ! "        Requires=kube-apiserver.service kube-download.service etcd.service\n"
+            - ! "        ConditionFileIsExecutable=/opt/bin/scheduler\n"
+            - ! "        [Service]\n"
+            - ! "        ExecStart=/opt/bin/scheduler --logtostderr=true --master=127.0.0.1:8080\n"
+            - ! "        Restart=always\n"
+            - ! "        RestartSec=10\n"
+            - ! "        [Install]\n"
+            - ! "        WantedBy=multi-user.target\n"
+            - ! "    - name: kube-controller-manager.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=kube-apiserver.service kube-download.service etcd.service\n"
+            - ! "        Requires=kube-apiserver.service kube-download.service etcd.service\n"
+            - ! "        ConditionFileIsExecutable=/opt/bin/controller-manager\n"
+            - ! "        [Service]\n"
+            - ! "        ExecStart=/opt/bin/controller-manager --master=127.0.0.1:8080 --logtostderr=true\n"
+            - ! "        Restart=always\n"
+            - ! "        RestartSec=10\n"
+            - ! "        [Install]\n"
+            - ! "        WantedBy=multi-user.target\n"
+            - ! "    - name: kube-register.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=kube-apiserver.service kube-register-download.service fleet.socket\n"
+            - ! "        Requires=kube-apiserver.service kube-register-download.service fleet.socket\n"
+            - ! "        ConditionFileIsExecutable=/opt/bin/kube-register\n"
+            - ! "        [Service]\n"
+            - ! "        ExecStart=/opt/bin/kube-register --metadata=role=minion --fleet-endpoint=unix:///var/run/fleet.sock -api-endpoint=http://127.0.0.1:8080\n"
+            - ! "        Restart=always\n"
+            - ! "        RestartSec=10\n"
+            - ! "        [Install]\n"
+            - ! "        WantedBy=multi-user.target\n"
+            - ! "  update:\n"
+            - ! "    group: alpha\n"
+            - ! "    reboot-strategy: off\n"
+    Type: AWS::AutoScaling::LaunchConfiguration
+  MinionLaunchConfig:
+    Properties:
+      ImageId:
+        Fn::FindInMap:
+        - RegionMap
+        - Ref: AWS::Region
+        - AMI
+      InstanceType:
+        Ref: InstanceType
+      KeyName:
+        Ref: KeyPair
+      SecurityGroups:
+      - Ref: KubeSecurityGroup
+      - Ref: KubeMinionSecurityGroup
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+          - ""
+          - - ! "#cloud-config\n\n"
+            - ! "coreos:\n"
+            - ! "  etcd:\n"
+            - ! "    discovery: "
+            - Ref: DiscoveryURL
+            - ! "\n"
+            - ! "    addr: $"
+            - Ref: AdvertisedIPAddress
+            - ! "_ipv4:4001\n"
+            - ! "    peer-addr: $"
+            - Ref: AdvertisedIPAddress
+            - ! "_ipv4:7001\n"
+            - ! "  fleet:\n"
+            - ! "    metadata: role=minion\n"
+            - ! "  units:\n"
+            - ! "    - name: kube-download.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=network-online.target\n"
+            - ! "        Requires=network-online.target\n"
+            - ! "        [Service]\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/apiserver\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/controller-manager\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/kubecfg\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/kubelet\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/proxy\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/scheduler\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/scheduler\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://s3.amazonaws.com/third-party-binaries/flanneld\n"
+            - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://s3.amazonaws.com/third-party-binaries/kube-register\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/apiserver\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/controller-manager\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/flanneld\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/kube-register\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/kubecfg\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/kubelet\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/proxy\n"
+            - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/scheduler\n"
+            - ! "        RemainAfterExit=yes\n"
+            - ! "        Type=oneshot\n"
+            - ! "    - name: etcd.service\n"
+            - ! "      command: start\n"
+            - ! "    - name: flannel.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=kube-download.service etcd.service\n"
+            - ! "        Requires=kube-download.service etcd.service\n"
+            - ! "        [Service]\n"
+            - ! "        ExecStartPre=/bin/bash -c \"until /usr/bin/etcdctl --no-sync set /coreos.com/network/config '{\\\"Network\\\":\\\""
+            - Ref: DockerCIDR
+            - ! "\\\"}' ; do /usr/bin/sleep 1 ; done\"\n"
+            - ! "        ExecStart=/opt/bin/flanneld\n"
+            - ! "        ExecStartPost=/bin/bash -c \"until [ -e /run/flannel/subnet.env ]; do /usr/bin/sleep 1 ; done\"\n"
+            - ! "        [Install]\n"
+            - ! "        WantedBy=multi-user.target\n"
+            - ! "    - name: docker.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=flannel.service\n"
+            - ! "        Requires= docker.socket flannel.service\n"
+            - ! "        [Service]\n"
+            - ! "        Environment=\"TMPDIR=/var/tmp/\"\n"
+            - ! "        EnvironmentFile=/run/flannel/subnet.env\n"
+            - ! "        ExecStartPre=/bin/mount --make-rprivate /\n"
+            - ! "        LimitNOFILE=1048576\n"
+            - ! "        LimitNPROC=1048576\n"
+            - ! "        ExecStart=/usr/bin/docker --daemon --storage-driver=btrfs --host=fd:// --bip=${FLANNEL_SUBNET} --mtu=${FLANNEL_MTU}\n"
+            - ! "        [Install]\n"
+            - ! "        WantedBy=multi-user.target\n"
+            - ! "    - name: fleet.socket\n"
+            - ! "      command: start\n"
+            - ! "    - name: fleet.service\n"
+            - ! "      command: start\n"
+            - ! "    - name: kube-kubelet.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=kube-download.service etcd.service\n"
+            - ! "        Requires=kube-download.service etcd.service\n"
+            - ! "        ConditionFileIsExecutable=/opt/bin/kubelet\n"
+            - ! "        [Service]\n"
+            - ! "        ExecStart=/opt/bin/kubelet --address=0.0.0.0 --port=10250 --hostname_override=$"
+            - Ref: AdvertisedIPAddress
+            - ! "_ipv4 --etcd_servers=http://127.0.0.1:4001 --logtostderr=true\n"
+            - ! "        Restart=always\n"
+            - ! "        RestartSec=10\n"
+            - ! "        [Install]\n"
+            - ! "        WantedBy=multi-user.target\n"
+            - ! "    - name: kube-proxy.service\n"
+            - ! "      command: start\n"
+            - ! "      content: |\n"
+            - ! "        [Unit]\n"
+            - ! "        After=kube-download.service etcd.service\n"
+            - ! "        Requires=kube-download.service etcd.service\n"
+            - ! "        ConditionFileIsExecutable=/opt/bin/proxy\n"
+            - ! "        [Service]\n"
+            - ! "        ExecStart=/opt/bin/proxy --etcd_servers=http://127.0.0.1:4001 --logtostderr=true\n"
+            - ! "        Restart=always\n"
+            - ! "        RestartSec=10\n"
+            - ! "        [Install]\n"
+            - ! "        WantedBy=multi-user.target\n"
+            - ! "  update:\n"
+            - ! "    group: alpha\n"
+            - ! "    reboot-strategy: off\n"
+    Type: AWS::AutoScaling::LaunchConfiguration
