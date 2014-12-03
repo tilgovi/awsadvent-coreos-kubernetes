@@ -22,7 +22,7 @@ technologies on Linux but today CoreOS is known for it's Docker
 integration.
 
 CoreOS also includes Etcd, a useful Raft-based key/value store. You
-can use this to store cluster-wide configuration & and to provide
+can use this to store cluster-wide configuration and to provide
 look-up data to all your nodes.
 
 Fleet is another CoreOS built-in service that can optionally be
