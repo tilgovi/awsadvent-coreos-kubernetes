@@ -218,7 +218,7 @@ Now use fleetctl to start your service on the cluster:
 
 NOTE: There's a way to use the FLEETCTL\_TUNNEL environment variable
 in order to use fleetctl locally on your laptop/desktop.  I'll leave
-this to a viewer exercise.
+this as a viewer exercise.
 
 Fleet is capable of tracking containers that fail (via systemd
 signals).  It will reschedule a container for another node if
@@ -300,7 +300,7 @@ needed to use the Flannel network for Docker.
 
     coreos:
       units:
-      - name: flanneld-download.service
+      - name: flannel-download.service
         command: start
         content: |
           [Unit]
@@ -550,7 +550,7 @@ I used YAML here for reasons:
 
     ---
     AWSTemplateFormatVersion: '2010-09-09'
-    Description: 'CoreOS on EC2: http://coreos.com/docs/running-coreos/cloud-providers/ec2/'
+    Description: 'Kubernetes on CoreOS on EC2'
     Mappings:
       RegionMap:
         ap-northeast-1:
@@ -591,10 +591,10 @@ I used YAML here for reasons:
         Description: The net block (CIDR) that SSH is available to.
         Type: String
       ClusterSize:
-        Default: '3'
+        Default: '2'
         Description: Number of 'minion' nodes in cluster.
         MaxValue: '256'
-        MinValue: '1'
+        MinValue: '2'
         Type: Number
       DiscoveryURL:
         Description: An unique etcd cluster discovery URL. Grab a new token from https://discovery.etcd.io/new
@@ -627,8 +627,8 @@ I used YAML here for reasons:
         - t2.small
         - t2.medium
         ConstraintDescription: Must be a valid EC2 HVM instance type.
-        Default: c3.large
-        Description: EC2 HVM instance type (c3.large, etc).
+        Default: m3.medium
+        Description: EC2 instance type (m3.medium, etc).
         Type: String
       KeyPair:
         Description: The name of an EC2 Key Pair to allow SSH access to the instance.
@@ -637,28 +637,28 @@ I used YAML here for reasons:
       CoreOSInternalIngressTCP:
         Properties:
           GroupName:
-            Ref: CoreOSSecurityGroup
+            Ref: KubeSecurityGroup
           IpProtocol: tcp
           FromPort: '0'
           ToPort: '65535'
           SourceSecurityGroupId:
             Fn::GetAtt:
-            - CoreOSSecurityGroup
+            - KubeSecurityGroup
             - GroupId
         Type: AWS::EC2::SecurityGroupIngress
       CoreOSInternalIngressUDP:
         Properties:
           GroupName:
-            Ref: CoreOSSecurityGroup
+            Ref: KubeSecurityGroup
           IpProtocol: udp
           FromPort: '0'
           ToPort: '65535'
           SourceSecurityGroupId:
             Fn::GetAtt:
-            - CoreOSSecurityGroup
+            - KubeSecurityGroup
             - GroupId
         Type: AWS::EC2::SecurityGroupIngress
-      CoreOSSecurityGroup:
+      KubeSecurityGroup:
         Properties:
           GroupDescription: CoreOS SecurityGroup
           SecurityGroupIngress:
@@ -668,11 +668,11 @@ I used YAML here for reasons:
             IpProtocol: tcp
             ToPort: '22'
         Type: AWS::EC2::SecurityGroup
-      MasterSecurityGroup:
+      KubeMasterSecurityGroup:
         Properties:
           GroupDescription: Master SecurityGroup
         Type: AWS::EC2::SecurityGroup
-      MinionSecurityGroup:
+      KubeMinionSecurityGroup:
         Properties:
           GroupDescription: Minion SecurityGroup
         Type: AWS::EC2::SecurityGroup
@@ -683,7 +683,7 @@ I used YAML here for reasons:
           DesiredCapacity: '1'
           LaunchConfigurationName:
             Ref: MasterLaunchConfig
-          MaxSize: '3'
+          MaxSize: '2'
           MinSize: '1'
           Tags:
           - Key: Name
@@ -700,7 +700,7 @@ I used YAML here for reasons:
           LaunchConfigurationName:
             Ref: MinionLaunchConfig
           MaxSize: '256'
-          MinSize: '1'
+          MinSize: '2'
           Tags:
           - Key: Name
             PropagateAtLaunch: true
@@ -719,8 +719,8 @@ I used YAML here for reasons:
           KeyName:
             Ref: KeyPair
           SecurityGroups:
-          - Ref: CoreOSSecurityGroup
-          - Ref: MasterSecurityGroup
+          - Ref: KubeSecurityGroup
+          - Ref: KubeMasterSecurityGroup
           UserData:
             Fn::Base64:
               Fn::Join:
@@ -740,7 +740,7 @@ I used YAML here for reasons:
                 - ! "  fleet:\n"
                 - ! "    metadata: role=master\n"
                 - ! "  units:\n"
-                - ! "    - name: flanneld-download.service\n"
+                - ! "    - name: flannel-download.service\n"
                 - ! "      command: start\n"
                 - ! "      content: |\n"
                 - ! "        [Unit]\n"
@@ -915,8 +915,8 @@ I used YAML here for reasons:
           KeyName:
             Ref: KeyPair
           SecurityGroups:
-          - Ref: CoreOSSecurityGroup
-          - Ref: MinionSecurityGroup
+          - Ref: KubeSecurityGroup
+          - Ref: KubeMinionSecurityGroup
           UserData:
             Fn::Base64:
               Fn::Join:
@@ -1036,14 +1036,38 @@ I used YAML here for reasons:
         | ruby -ryaml -rjson -e 'print YAML.load(STDIN.read).to_json' \
         | tee kubernetes.json
 
+If you have another tool you prefer to convert YAML to JSON, then
+use that. I have Ruby & Python usually installed on my machines
+from other DevOps activities. Either one could be used.
+
 ## Launching with AWS Cloud Formation
 
     aws cloudformation create-stack \
         --stack-name kubernetes \
-        --template-body "file://kubernetes.json" \
+        --template-body file://kubernetes.json \
         --parameters \
             ParameterKey=DiscoveryURL,ParameterValue="$(curl -s http://discovery.etcd.io/new)" \
-            ParameterKey=KeyPair,ParameterValue=KEYPAIR_NAME
+            ParameterKey=KeyPair,ParameterValue=coreos
+
+SSH into the master node on the cluster:
+
+    ssh -A core@ec2-54-211-121-17.compute-1.amazonaws.com
+
+We can still use Fleet if we want:
+
+    fleetctl list-machines
+    fleetctl list-units
+
+But now we can use Kubernetes also:
+
+    kubecfg list minions
+    kubecfg list pods
+
+Looks something like this:
+![img](./kubernetes.png)
+
+Here's the [Kubernetes 101 documentation](https://github.com/GoogleCloudPlatform/kubernetes/blob/master/examples/walkthrough/README.md) as a next step.  Happy
+deploying!
 
 # Cluster Architecture
 
@@ -1058,13 +1082,14 @@ about our using containers is that re-configuring things feels a bit
 like moving chess pieces on a board (not repainting the scene by
 hand).
 
-# Personal Plug (If that's OK)
+# Personal Plug
 
 I'm looking for contract work to fill the gaps next year.  You might
-need help with Amazon (I've been at it since 2007), Virtualization
-or DevOps. I also love programming & new start-ups.  I currently use
-Haskell & Purescript.  I'm actively using Purescript with Amazon's
-JS SDK (& soon with AWS Lambda). If you need the help, let's work it
-out.
+need help with Amazon (I've using AWS FT since 2007), Virtualization
+or DevOps. I also like programming & new start-ups.  I prefer to
+program in Haskell & Purescript.  I'm actively using Purescript with
+Amazon's JS SDK (& soon with AWS Lambda). If you need the help,
+let's work it out. I'm @dysinger on twitter, dysinger on IRC or send
+e-mail to tim on the domain dysinger.net
 
 P.S. You should really learn Haskell. :)
