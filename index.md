@@ -368,13 +368,13 @@ Download Kubernetes (Partial) Cloud Config (both Master & Minion):
           After=network-online.target
           Requires=network-online.target
           [Service]
-          ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/apiserver
-          ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/controller-manager
-          ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/kubecfg
-          ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/kubelet
-          ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/proxy
-          ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/scheduler
-          ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/scheduler
+          ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/apiserver
+          ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/controller-manager
+          ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/kubecfg
+          ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/kubelet
+          ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/proxy
+          ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/scheduler
+          ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/scheduler
           ExecStart=/usr/bin/chmod +x /opt/bin/apiserver
           ExecStart=/usr/bin/chmod +x /opt/bin/controller-manager
           ExecStart=/usr/bin/chmod +x /opt/bin/kubecfg
@@ -758,13 +758,13 @@ I used YAML here for reasons:
                 - ! "        After=network-online.target\n"
                 - ! "        Requires=network-online.target\n"
                 - ! "        [Service]\n"
-                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/apiserver\n"
-                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/controller-manager\n"
-                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/kubecfg\n"
-                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/kubelet\n"
-                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/proxy\n"
-                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/scheduler\n"
-                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/scheduler\n"
+                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/apiserver\n"
+                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/controller-manager\n"
+                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/kubecfg\n"
+                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/kubelet\n"
+                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/proxy\n"
+                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/scheduler\n"
+                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/scheduler\n"
                 - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/apiserver\n"
                 - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/controller-manager\n"
                 - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/kubecfg\n"
@@ -943,13 +943,13 @@ I used YAML here for reasons:
                 - ! "        After=network-online.target\n"
                 - ! "        Requires=network-online.target\n"
                 - ! "        [Service]\n"
-                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/apiserver\n"
-                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/controller-manager\n"
-                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/kubecfg\n"
-                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/kubelet\n"
-                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/proxy\n"
-                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/scheduler\n"
-                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin http://storage.googleapis.com/kubernetes/scheduler\n"
+                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/apiserver\n"
+                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/controller-manager\n"
+                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/kubecfg\n"
+                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/kubelet\n"
+                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/proxy\n"
+                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/scheduler\n"
+                - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://storage.googleapis.com/kubernetes/scheduler\n"
                 - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://s3.amazonaws.com/third-party-binaries/flanneld\n"
                 - ! "        ExecStart=/usr/bin/wget -N -P /opt/bin https://s3.amazonaws.com/third-party-binaries/kube-register\n"
                 - ! "        ExecStart=/usr/bin/chmod +x /opt/bin/apiserver\n"
